@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لعبة سين جيم</title>
+<style>
+body{background:#0f172a;color:white;font-family:Arial;text-align:center;margin:0}
+.panel{background:#1e293b;padding:20px;margin:20px auto;border-radius:10px;max-width:900px}
+input,textarea,select{display:block;width:90%;max-width:450px;padding:12px;margin:10px auto;background:#0f172a;color:white;border:1px solid #475569;border-radius:6px}
+button{padding:11px 15px;margin:5px;cursor:pointer;border:0;border-radius:6px;background:#2563eb;color:white}
+.danger{background:#dc2626}.hidden{display:none!important}
+.categories{display:flex;flex-wrap:wrap;justify-content:center}
+.cat{background:#334155;margin:8px;padding:12px;border-radius:8px;cursor:pointer;width:130px}
+.cat.selected{background:#16a34a}
+#board{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;max-width:900px;margin:25px auto}
+.cell{padding:25px 5px;font-size:22px;background:#1d4ed8}
+.question{background:#1e293b;padding:20px;margin:20px auto;border-radius:10px}
+.answer{display:block;width:90%;max-width:450px;margin:8px auto}
+@media(max-width:500px){#board{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+
+<h1>🎮 لعبة سين جيم</h1>
+
+<section id="login" class="panel">
+<h2>تسجيل الدخول</h2>
+<input id="user" placeholder="اسم المستخدم">
+<input id="pass" type="password" placeholder="كلمة المرور">
+<button onclick="login()">دخول</button>
+<p id="msg"></p>
+</section>
+
+<section id="game" class="hidden">
+<div class="panel">
+<h2>أهلًا <span id="player"></span></h2>
+<h3>النقاط: <span id="score">0</span></h3>
+<button onclick="logout()">خروج</button>
+<h3>اختر حتى 5 فئات</h3>
+<div id="categories" class="categories"></div>
+<button onclick="startGame()">ابدأ اللعبة</button>
+<button onclick="resetGame()">إعادة الجولة</button>
+<div id="board"></div>
+<div id="questionBox"></div>
+</div>
+</section>
+
+<section id="admin" class="hidden">
+<div class="panel">
+<h2>👑 لوحة تحكم الأدمن</h2>
+<button onclick="tab('add')">إضافة سؤال</button>
+<button onclick="tab('manage')">إدارة الأسئلة</button>
+<button onclick="tab('settings')">تغيير كلمة السر</button>
+<button class="danger" onclick="logout()">خروج</button>
+</div>
+
+<div id="add" class="panel">
+<h3>إضافة أو تعديل سؤال</h3>
+<input id="cat" placeholder="اسم الفئة">
+<textarea id="q" placeholder="السؤال"></textarea>
+<input id="o0" placeholder="الخيار الأول">
+<input id="o1" placeholder="الخيار الثاني">
+<input id="o2" placeholder="الخيار الثالث">
+<input id="o3" placeholder="الخيار الرابع">
+<select id="ans">
+<option value="0">الإجابة الأولى صحيحة</option>
+<option value="1">الإجابة الثانية صحيحة</option>
+<option value="2">الإجابة الثالثة صحيحة</option>
+<option value="3">الإجابة الرابعة صحيحة</option>
+</select>
+<select id="pts">
+<option>100</option><option>200</option><option>300</option>
+<option>400</option><option>500</option>
+</select>
+<button onclick="saveQuestion()">حفظ السؤال</button>
+<button onclick="clearForm()">إفراغ الحقول</button>
+<p id="adminMsg"></p>
+</div>
+
+<div id="manage" class="panel hidden">
+<h3>الأسئلة</h3>
+<div id="list"></div>
+</div>
+
+<div id="settings" class="panel hidden">
+<h3>تغيير كلمة مرور الأدمن</h3>
+<input id="oldPass" type="password" placeholder="كلمة المرور الحالية">
+<input id="newPass" type="password" placeholder="كلمة المرور الجديدة">
+<button onclick="changePassword()">حفظ</button>
+<p id="passMsg"></p>
+</div>
+</section>
+
+<script>
+const ADMIN_USER = "admin";
+const DEFAULT_PASSWORD = "FM889!2026";
+let adminPassword = localStorage.getItem("sj_password") || DEFAULT_PASSWORD;
+
+let isAdmin = false;
+let selected = [];
+let score = 0;
+let editId = null;
+let activeQuestions = [];
+let used = new Set();
+
+const categoryNames = [
+"تاريخ","جغرافيا","علوم","رياضة","ثقافة عامة",
+"القرآن الكريم","حديث","أنبياء","دول العالم","عواصم",
+"مخترعون","طب","كيمياء","فيزياء","الفضاء","كواكب",
+"البحار","الحيوانات","النباتات","الأدب","شعر","كتب",
+"تكنولوجيا","برمجة","الإنترنت","ألعاب","سينما","مسلسلات",
+"مشاهير","تاريخ العرب","الخلفاء","الحروب","مدن","اختراعات",
+"رياضيات","ألغاز","ذكاء","اقتصاد","سياسة","الكويت"
+];
+
+const samples = [
+{id:1,category:"الكويت",points:100,q:"ما عاصمة دولة الكويت؟",
+options:["الدوحة","مدينة الكويت","مسقط","المنامة"],answer:1},
+{id:2,category:"علوم",points:100,q:"ما الكوكب الأحمر؟",
+options:["الزهرة","المشتري","المريخ","عطارد"],answer:2},
+{id:3,category:"جغرافيا",points:200,q:"ما أكبر قارة؟",
+options:["أفريقيا","آسيا","أوروبا","أستراليا"],answer:1}
+];
+
+function loadQuestions(){
+try{
+const data=JSON.parse(localStorage.getItem("sj_questions"));
+return Array.isArray(data)?data:samples;
+}catch{return samples;}
+}
+let questions=loadQuestions();
+function saveData(){localStorage.setItem("sj_questions",JSON.stringify(questions));}
+
+function login(){
+const u=document.getElementById("user").value.trim();
+const p=document.getElementById("pass").value;
+if(!u||!p){msg.textContent="اكتب بيانات الدخول";return;}
+
+if(u===ADMIN_USER&&p===adminPassword){
+isAdmin=true;
+loginPanel.classList.add("hidden");
+admin.classList.remove("hidden");
+tab("add");
+renderList();
+return;
+}
+if(u===ADMIN_USER){msg.textContent="كلمة المرور غير صحيحة";return;}
+
+isAdmin=false;
+loginPanel.classList.add("hidden");
+game.classList.remove("hidden");
+player.textContent=u;
+score=0;
+document.getElementById("score").textContent=score;
+renderCategories();
+}
+
+function logout(){
+isAdmin=false;
+loginPanel.classList.remove("hidden");
+game.classList.add("hidden");
+admin.classList.add("hidden");
+document.getElementById("pass").value="";
+}
+
+function tab(name){
+["add","manage","settings"].forEach(id=>
+document.getElementById(id).classList.toggle("hidden",id!==name));
+}
+
+function renderCategories(){
+categories.innerHTML="";
+selected=[];
+const names=[...new Set([...categoryNames,...questions.map(q=>q.category)])];
+names.forEach(name=>{
+const d=document.createElement("div");
+d.className="cat";
+d.textContent=name;
+d.onclick=()=>{
+if(selected.includes(name)){
+selected=selected.filter(x=>x!==name);
+d.classList.remove("selected");
+}else if(selected.length<5){
+selected.push(name);
+d.classList.add("selected");
+}else alert("يمكن اختيار 5 فئات فقط");
+};
+categories.appendChild(d);
+});
+}
+
+function startGame(){
+if(!selected.length){alert("اختر فئة أولًا");return;}
+activeQuestions=questions.filter(q=>selected.includes(q.category));
+used.clear();
+questionBox.innerHTML="";
+renderBoard();
+}
+
+function renderBoard(){
+board.innerHTML="";
+activeQuestions.forEach((q,i)=>{
+const b=document.createElement("button");
+b.className="cell";
+b.textContent=q.points;
+b.disabled=used.has(i);
+b.onclick=()=>showQuestion(q,i);
+board.appendChild(b);
+});
+}
+
+function showQuestion(q,i){
+if(used.has(i))return;
+used.add(i);
+questionBox.innerHTML="";
+const card=document.createElement("div");
+card.className="question";
+const title=document.createElement("h3");
+title.textContent=q.q;
+card.appendChild(title);
+
+q.options.forEach((opt,index)=>{
+const b=document.createElement("button");
+b.className="answer";
+b.textContent=opt;
+b.onclick=()=>{
+if(card.dataset.answered)return;
+card.dataset.answered="yes";
+if(index===Number(q.answer)){
+score+=Number(q.points);
+document.getElementById("score").textContent=score;
+b.style.background="green";
+}else{
+b.style.background="red";
+card.querySelectorAll("button")[q.answer].style.background="green";
+}
+const result=document.createElement("p");
+result.textContent=index===Number(q.answer)?"إجابة صحيحة!":"إجابة خاطئة!";
+card.appendChild(result);
+};
+card.appendChild(b);
+});
+questionBox.appendChild(card);
+renderBoard();
+}
+
+function resetGame(){
+score=0;
+document.getElementById("score").textContent=0;
+used.clear();
+questionBox.innerHTML="";
+renderBoard();
+}
+
+function clearForm(){
+editId=null;
+["cat","q","o0","o1","o2","o3"].forEach(id=>document.getElementById(id).value="");
+document.getElementById("ans").value="0";
+document.getElementById("pts").value="100";
+}
+
+function saveQuestion(){
+if(!isAdmin)return;
+const category=cat.value.trim();
+const question=q.value.trim();
+const options=[o0.value.trim(),o1.value.trim(),o2.value.trim(),o3.value.trim()];
+if(!category||!question||options.some(x=>!x)){
+adminMsg.textContent="عبّئ جميع الحقول";
+return;
+}
+
+if(editId===null){
+questions.push({id:Date.now(),category,points:Number(pts.value),q:question,options,answer:Number(ans.value)});
+}else{
+const index=questions.findIndex(x=>x.id===editId);
+if(index!==-1)questions[index]={id:editId,category,points:Number(pts.value),q:question,options,answer:Number(ans.value)};
+}
+saveData();
+adminMsg.textContent="تم حفظ السؤال";
+clearForm();
+renderList();
+}
+
+function renderList(){
+list.innerHTML="";
+questions.forEach(item=>{
+const row=document.createElement("div");
+row.className="panel";
+const text=document.createElement("p");
+text.textContent=item.category+" — "+item.q;
+row.appendChild(text);
+
+const edit=document.createElement("button");
+edit.textContent="تعديل";
+edit.onclick=()=>{
+editId=item.id;
+cat.value=item.category;
+q.value=item.q;
+o0.value=item.options[0];
+o1.value=item.options[1];
+o2.value=item.options[2];
+o3.value=item.options[3];
+ans.value=item.answer;
+pts.value=item.points;
+tab("add");
+};
+row.appendChild(edit);
+
+const del=document.createElement("button");
+del.textContent="حذف";
+del.className="danger";
+del.onclick=()=>{
+if(!isAdmin||!confirm("تأكيد حذف السؤال؟"))return;
+questions=questions.filter(x=>x.id!==item.id);
+saveData();
+renderList();
+};
+row.appendChild(del);
+list.appendChild(row);
+});
+}
+
+function changePassword(){
+if(!isAdmin)return;
+if(oldPass.value!==adminPassword){
+passMsg.textContent="كلمة المرور الحالية غير صحيحة";
+return;
+}
+if(newPass.value.length<10){
+passMsg.textContent="استخدم 10 أحرف على الأقل";
+return;
+}
+adminPassword=newPass.value;
+localStorage.setItem("sj_password",adminPassword);
+oldPass.value="";
+newPass.value="";
+passMsg.textContent="تم تغيير كلمة المرور على هذا المتصفح";
+}
+</script>
+</body>
+</html>
